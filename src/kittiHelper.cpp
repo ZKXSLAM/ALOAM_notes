@@ -34,6 +34,8 @@ std::vector<float> read_lidar_data(const std::string lidar_data_path)
     return lidar_data_buffer;
 }
 
+/// 读取kitti odometry的数据集的数据，具体包括点云，左右相机的图像，以及pose的groundTruth，
+/// 然后分成5个topic以10Hz（可修改）的频率发布出去，其中真正对算法有用的topic只有点云/velodyne_points，其他四个topic都是在rviz中可视化用
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "kitti_helper");
@@ -83,19 +85,24 @@ int main(int argc, char** argv)
     std::size_t line_num = 0;
 
     ros::Rate r(10.0 / publish_delay);
+    // 遍历时间戳这个文本文件
     while (std::getline(timestamp_file, line) && ros::ok())
     {
+        // 把string转换成浮点型
         float timestamp = stof(line);
         std::stringstream left_image_path, right_image_path;
+        // 找到对应的左右目图片
         left_image_path << dataset_folder << "sequences/" + sequence_number + "/image_0/" << std::setfill('0') << std::setw(6) << line_num << ".png";
-        cv::Mat left_image = cv::imread(left_image_path.str(), CV_LOAD_IMAGE_GRAYSCALE);
+        cv::Mat left_image = cv::imread(left_image_path.str(), cv::IMREAD_GRAYSCALE);
         right_image_path << dataset_folder << "sequences/" + sequence_number + "/image_1/" << std::setfill('0') << std::setw(6) << line_num << ".png";
-        cv::Mat right_image = cv::imread(left_image_path.str(), CV_LOAD_IMAGE_GRAYSCALE);
+        cv::Mat right_image = cv::imread(left_image_path.str(), cv::IMREAD_GRAYSCALE);
 
+        // 得到ground truth文件
         std::getline(ground_truth_file, line);
         std::stringstream pose_stream(line);
         std::string s;
         Eigen::Matrix<double, 3, 4> gt_pose;
+        // 得到这个变换矩阵
         for (std::size_t i = 0; i < 3; ++i)
         {
             for (std::size_t j = 0; j < 4; ++j)
@@ -105,6 +112,7 @@ int main(int argc, char** argv)
             }
         }
 
+        // 相机坐标系转到前左上的坐标系
         Eigen::Quaterniond q_w_i(gt_pose.topLeftCorner<3, 3>());
         Eigen::Quaterniond q = q_transform * q_w_i;
         q.normalize();

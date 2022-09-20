@@ -4,7 +4,7 @@ project(aloam_velodyne)
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS "-std=c++11")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
-
+set( CMAKE_CXX_STANDARD 14)
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   nav_msgs
@@ -20,7 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 #find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 3.2 REQUIRED)
 find_package(Ceres REQUIRED)
 
 include_directories(
