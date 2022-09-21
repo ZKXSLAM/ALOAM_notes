@@ -65,7 +65,7 @@ constexpr double SCAN_PERIOD = 0.1;
 constexpr double DISTANCE_SQ_THRESHOLD = 25;
 constexpr double NEARBY_SCAN = 2.5;
 
-int skipFrameNum = 5;
+int skipFrameNum = 5;      // 下采样的频率
 bool systemInited = false;
 
 double timeCornerPointsSharp = 0;
@@ -100,7 +100,7 @@ double para_q[4] = {0, 0, 0, 1};
 double para_t[3] = {0, 0, 0};
 
 // 下面的2个分别是优化变量para_q和para_t的映射：表示的是两个world坐标系下的位姿P之间的增量，例如△P = P0.inverse() * P1
-Eigen::Map<Eigen::Quaterniond> q_last_curr(para_q);
+Eigen::Map<Eigen::Quaterniond> q_last_curr(para_q);  // 上一帧到当前帧估计的旋转
 Eigen::Map<Eigen::Vector3d> t_last_curr(para_t);
 
 std::queue<sensor_msgs::PointCloud2ConstPtr> cornerSharpBuf;
@@ -125,9 +125,11 @@ void TransformToStart(PointType const *const pi, PointType *const po)
     //s = 1;
     // 这里点的操作方式都是一致的，相当于从结束时刻补偿到起始时刻
     // 这里相当于是一个匀速模型的假设
-    Eigen::Quaterniond q_point_last = Eigen::Quaterniond::Identity().slerp(s, q_last_curr); // 将上一帧的旋转通过插值求得当前帧的旋转
+    Eigen::Quaterniond q_point_last = Eigen::Quaterniond::Identity().slerp(s, q_last_curr); // 通过匀速假设模型
+                                                                                            // 将上一帧的旋转通过插值求得当前帧的旋转
     Eigen::Vector3d t_point_last = s * t_last_curr;
     Eigen::Vector3d point(pi->x, pi->y, pi->z);
+    // 去畸变后的点云
     Eigen::Vector3d un_point = q_point_last * point + t_point_last;
 
     po->x = un_point.x();
@@ -146,6 +148,7 @@ void TransformToEnd(PointType const *const pi, PointType *const po)
     TransformToStart(pi, &un_point_tmp);
 
     Eigen::Vector3d un_point(un_point_tmp.x, un_point_tmp.y, un_point_tmp.z);
+    // 基于匀速运动模型，基于上一帧的位姿变换将起始时刻的点云坐标 变换到结束时刻
     Eigen::Vector3d point_end = q_last_curr.inverse() * (un_point - t_last_curr);
 
     po->x = point_end.x();
@@ -199,6 +202,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "laserOdometry");
     ros::NodeHandle nh;
 
+    // 下采样的频率（以什么样的频率向后端发送数据）
     nh.param<int>("mapping_skip_frame", skipFrameNum, 2);
 
     printf("Mapping %d Hz \n", 10 / skipFrameNum);
@@ -209,6 +213,7 @@ int main(int argc, char **argv)
     ros::Subscriber subSurfPointsLessFlat = nh.subscribe<sensor_msgs::PointCloud2>("/laser_cloud_less_flat", 100, laserCloudLessFlatHandler);
     ros::Subscriber subLaserCloudFullRes = nh.subscribe<sensor_msgs::PointCloud2>("/velodyne_cloud_2", 100, laserCloudFullResHandler);
 
+    // 发布点云
     ros::Publisher pubLaserCloudCornerLast = nh.advertise<sensor_msgs::PointCloud2>("/laser_cloud_corner_last", 100);
     ros::Publisher pubLaserCloudSurfLast = nh.advertise<sensor_msgs::PointCloud2>("/laser_cloud_surf_last", 100);
     ros::Publisher pubLaserCloudFullRes = nh.advertise<sensor_msgs::PointCloud2>("/velodyne_cloud_3", 100);
@@ -222,14 +227,14 @@ int main(int argc, char **argv)
 
     while (ros::ok())
     {
-        ros::spinOnce(); // 触发一次回调
+        ros::spinOnce(); // 触发一次回调，告诉subscriber处理一次消息
 
         // 首先确保订阅的五个消息都有，有一个队列为空都不行
         if (!cornerSharpBuf.empty() && !cornerLessSharpBuf.empty() &&
             !surfFlatBuf.empty() && !surfLessFlatBuf.empty() &&
             !fullPointsBuf.empty())
         {
-            // 分别求出队列的第一时间
+            // 分别求出队列的第一个时间（队头元素的时间）
             timeCornerPointsSharp = cornerSharpBuf.front()->header.stamp.toSec();
             timeCornerPointsLessSharp = cornerLessSharpBuf.front()->header.stamp.toSec();
             timeSurfPointsFlat = surfFlatBuf.front()->header.stamp.toSec();
@@ -293,8 +298,7 @@ int main(int argc, char **argv)
                     // 定义一下ceres的核函数
                     ceres::LossFunction *loss_function = new ceres::HuberLoss(0.1);
                     // 由于旋转不满足一般意义的加法，因此这里使用ceres自带的local param
-                    ceres::LocalParameterization *q_parameterization =
-                        new ceres::EigenQuaternionParameterization();
+                    ceres::LocalParameterization *q_parameterization = new ceres::EigenQuaternionParameterization();
                     ceres::Problem::Options problem_options;
 
                     // 待优化的变量是帧间位姿，平移和旋转，这里旋转使用四元数表示
@@ -401,9 +405,10 @@ int main(int argc, char **argv)
                                                          laserCloudCornerLast->points[minPointInd2].z);
 
                             double s; // 运动补偿系数，kitti数据集的点云已经被补偿过，所以s = 1.0
-                            if (DISTORTION)
+                            if (DISTORTION){
                                 // 当前的时间比例
                                 s = (cornerPointsSharp->points[i].intensity - int(cornerPointsSharp->points[i].intensity)) / SCAN_PERIOD;
+                            }
                             else
                                 s = 1.0;
                             // 用点O，A，B构造点到线的距离的残差项，注意这三个点都是在上一帧的Lidar坐标系下，即，残差 = 点O到直线AB的距离
@@ -511,8 +516,11 @@ int main(int argc, char **argv)
                                                                 laserCloudSurfLast->points[minPointInd3].z);
 
                                 double s;
-                                if (DISTORTION)
+                                if (DISTORTION){
+                                    // 时间比例
                                     s = (surfPointsFlat->points[i].intensity - int(surfPointsFlat->points[i].intensity)) / SCAN_PERIOD;
+                                }
+
                                 else
                                     s = 1.0;
                                 // 构建点到面的约束

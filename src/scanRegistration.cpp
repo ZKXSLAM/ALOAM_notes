@@ -108,6 +108,7 @@ void removeClosedPointCloud(const pcl::PointCloud<PointT> &cloud_in,
         cloud_out.points.resize(j);
     }
 
+    // 消除完之后的点云固定高度为1，宽度为size
     cloud_out.height = 1;
     cloud_out.width = static_cast<uint32_t>(j);
     cloud_out.is_dense = true;
@@ -151,9 +152,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     // 由于激光雷达是顺时针旋转的，这里取反就相当于转成了逆时针
     float startOri = -atan2(laserCloudIn.points[0].y, laserCloudIn.points[0].x);
     // atan2的范围是[-pi，pi]。这里加上2pi是为了保证起始到结束相差2pi符合实际
-    float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y,
-                          laserCloudIn.points[cloudSize - 1].x) +
-                   2 * M_PI;
+    float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y, laserCloudIn.points[cloudSize - 1].x) + 2 * M_PI;
 
     // 总有一些例外，比如这里大于3pi，和小于pi，就需要做一些调整到合理范围
     if (endOri - startOri > 3 * M_PI)
@@ -301,8 +300,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
 
     TicToc t_pts;
 
-    pcl::PointCloud<PointType> cornerPointsSharp;
-    pcl::PointCloud<PointType> cornerPointsLessSharp;
+    pcl::PointCloud<PointType> cornerPointsSharp;      // 存放大曲率的点云
+    pcl::PointCloud<PointType> cornerPointsLessSharp;  // 存放较大曲率的点云（包含了大曲率的点云）
     pcl::PointCloud<PointType> surfPointsFlat;
     pcl::PointCloud<PointType> surfPointsLessFlat;
 
@@ -310,7 +309,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     // 按照scan的顺序提取4种特征点
     for (int i = 0; i < N_SCANS; i++)
     {
-        // 如果该scan的点数少于7个点，就跳过
+        // 如果该scan的点数少于6个点，就跳过
         if( scanEndInd[i] - scanStartInd[i] < 6)
             continue;
         // 用来存储不太平整的点
@@ -367,7 +366,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
                     //（右边找5个）
                     for (int l = 1; l <= 5; l++)
                     {
-                        // 查看相邻点距离是否差异过大，如果差异过大说明点云在此不连续，是特正边缘，是特征边缘，就会是新的特征，因此就不置位了
+                        // 查看相邻点距离是否差异过大，如果差异过大说明点云在此不连续，是特征边缘，就会是新的特征，因此就不置位了
                         float diffX = laserCloud->points[ind + l].x - laserCloud->points[ind + l - 1].x;
                         float diffY = laserCloud->points[ind + l].y - laserCloud->points[ind + l - 1].y;
                         float diffZ = laserCloud->points[ind + l].z - laserCloud->points[ind + l - 1].z;
@@ -524,7 +523,7 @@ int main(int argc, char **argv)
 
     // 从配置文件中获取多少线的激光雷达，如果没有读取到就是设置为16
     nh.param<int>("scan_line", N_SCANS, 16);
-    // 最小有效距离
+    // 最小有效距离，将lidar 一定距离内的点云消去（避免lidar载体的影响）
     nh.param<double>("minimum_range", MINIMUM_RANGE, 0.1);
 
     printf("scan line number %d \n", N_SCANS);

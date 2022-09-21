@@ -50,8 +50,8 @@ struct LidarEdgeFactor
 	static ceres::CostFunction *Create(const Eigen::Vector3d curr_point_, const Eigen::Vector3d last_point_a_,
 									   const Eigen::Vector3d last_point_b_, const double s_)
 	{
-		return (new ceres::AutoDiffCostFunction<
-				LidarEdgeFactor, 3, 4, 3>(
+	    // 3: 残差的维度； 4：参数块四元数的维度； 3：参数块平移的维度
+		return (new ceres::AutoDiffCostFunction<LidarEdgeFactor, 3, 4, 3>(
 			new LidarEdgeFactor(curr_point_, last_point_a_, last_point_b_, s_)));
 	}
 
@@ -79,6 +79,7 @@ struct LidarPlaneFactor
 		Eigen::Matrix<T, 3, 1> lpj{T(last_point_j.x()), T(last_point_j.y()), T(last_point_j.z())};
 		//Eigen::Matrix<T, 3, 1> lpl{T(last_point_l.x()), T(last_point_l.y()), T(last_point_l.z())};
 		//Eigen::Matrix<T, 3, 1> lpm{T(last_point_m.x()), T(last_point_m.y()), T(last_point_m.z())};
+		// 法向量
 		Eigen::Matrix<T, 3, 1> ljm{T(ljm_norm.x()), T(ljm_norm.y()), T(ljm_norm.z())};
 
 		//Eigen::Quaternion<T> q_last_curr{q[3], T(s) * q[0], T(s) * q[1], T(s) * q[2]};
@@ -127,7 +128,7 @@ struct LidarPlaneNormFactor
 		point_w = q_w_curr * cp + t_w_curr;
 
 		Eigen::Matrix<T, 3, 1> norm(T(plane_unit_norm.x()), T(plane_unit_norm.y()), T(plane_unit_norm.z()));
-		residual[0] = norm.dot(point_w) + T(negative_OA_dot_norm); // 求解点到平面的距离
+		residual[0] = norm.dot(point_w) + T(negative_OA_dot_norm); // 求解点到平面的距离（分母已经为1了）
 		return true;
 	}
 
